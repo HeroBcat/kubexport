@@ -1,0 +1,69 @@
+- name: kubernetes-deploy-watcher
+  resources:
+    - Deployment: kubernetes-deploy-watcher
+    - ConfigMap: kubernetes-deploy-watcher
+    - Secret: registry-creds
+- name: openbayes-1s
+  resources:
+    - Deployment: openbayes-1s
+    - ConfigMap: openbayes-1s
+- name: openbayes-api-server
+  resources:
+    - Deployment: openbayes-server
+    - Service: openbayes-server-svc
+    - Ingress: openbayes-server-ing
+    - ConfigMap: openbayes-server
+    - Secret: openbayes-server
+    - Secret: openbayes-admin
+- name: openbayes-archive-service
+  resources:
+    - Deployment: openbayes-archive-service
+    - ConfigMap: openbayes-archive-service
+    - Secret: openbayes-archive-service
+    - PersistentVolumeClaim: archive-storage
+- name: openbayes-command-runner
+  resources:
+    - Deployment: openbayes-command-runner
+    - ConfigMap: openbayes-command-runner
+    - ServiceAccount: openbayes-command-runner
+- name: openbayes-console
+  resources:
+    - Deployment: openbayes-console
+    - Service: openbayes-console-service
+    - Ingress: openbayes-console-ing
+    - ConfigMap: openbayes-console
+- name: openbayes-daemon-server
+  resources:
+    - Deployment: openbayes-daemon-server
+    - Secret: openbayes-notification-server
+    - ConfigMap: openbayes-job-monitor
+    - ConfigMap: openbayes-notification-server
+- name: openbayes-docs
+  resources:
+    - Deployment: openbayes-docs
+    - Service: openbayes-docs-service
+    - Ingress: openbayes-docs-ing
+- name: openbayes-payment-scheduler
+  resources:
+    - Deployment: openbayes-payment-scheduler
+    - ConfigMap: openbayes-payment-scheduler
+- name: openbayes-storage-service
+  resources:
+    - Deployment: openbayes-storage-server
+    - Service: openbayes-storage-server-svc
+    - Ingress: openbayes-storage-server-ing
+    - ConfigMap: openbayes-storage-server
+    - PersistentVolumeClaim: openbayes-storage-vol-claim
+- name: openbayes-vizier
+  resources:
+    - Deployment: openbayes-vizier
+    - Service: openbayes-value-svc
+    - Ingress: openbayes-value-ing
+    - Secret: openbayes-vizier
+- name: openbayes.com
+  resources:
+    - Deployment: openbayes-com
+    - Service: openbayes-com-service
+    - Ingress: openbayes-com-ing
+
+
