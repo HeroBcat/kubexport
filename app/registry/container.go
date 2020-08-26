@@ -8,9 +8,11 @@ import (
 )
 
 var (
-	kubeUseCase *app.KubeUseCase
+	kubeUseCase  *app.KubeUseCase
+	localUseCase *app.LocalUseCase
 
-	kubeOnce sync.Once
+	kubeOnce  sync.Once
+	localOnce sync.Once
 )
 
 func BuildKubeUseCase() app.KubeUseCase {
@@ -25,4 +27,17 @@ func BuildKubeUseCase() app.KubeUseCase {
 	})
 
 	return *kubeUseCase
+}
+
+func BuildLocalUseCase() app.LocalUseCase {
+
+	localOnce.Do(func() {
+		if localUseCase == nil {
+			cleanUpService := serv.NewCleanUpService()
+			useCase := app.NewLocalUseCase(cleanUpService)
+			localUseCase = &useCase
+		}
+	})
+
+	return *localUseCase
 }

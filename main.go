@@ -17,7 +17,6 @@ import (
 func main() {
 
 	var (
-		// sourceDir      string
 		targetDir      string
 		yamlPath       string
 		isHelmChart    bool = false
@@ -26,7 +25,7 @@ func main() {
 
 	rootCmd := &cobra.Command{
 		Use:   "kubexport",
-		Short: "A tool to export yamls from local or k8s environment",
+		Short: "export yaml files from k8s environment",
 		Run: func(cmd *cobra.Command, args []string) {
 
 			name := ""
@@ -81,7 +80,6 @@ func main() {
 		},
 	}
 
-	// rootCmd.Flags().StringVar(&sourceDir, "local", "", "Specify the directory of the local source yaml files")
 	rootCmd.Flags().StringVar(&targetDir, "target", "", "Specify the directory to create files")
 	rootCmd.Flags().StringVar(&yamlPath, "yaml", "", "Specify the path of yaml file")
 	// rootCmd.Flags().BoolVar(&isHelmChart, "helm", false, "Specify conversion to helm files")
@@ -90,7 +88,52 @@ func main() {
 		rootCmd.Flags().StringSliceVar(&inputWithKinds[idx], strings.ToLower(kind), nil, "Specify the names of "+kind)
 	}
 
+	rootCmd.AddCommand(localCmd())
+
 	if err := rootCmd.Execute(); err != nil {
 		log.Fatal(err)
 	}
+}
+
+func localCmd() *cobra.Command {
+
+	var (
+		localPath   string
+		targetDir   string
+		isHelmChart bool = false
+	)
+
+	cmd := &cobra.Command{
+		Use:   "local",
+		Short: "export yaml files from local path",
+		Run: func(cmd *cobra.Command, args []string) {
+
+			name := ""
+			if len(args) > 0 {
+				name = args[0]
+			}
+
+			if targetDir == "" {
+				home, err := homedir.Dir()
+				if err != nil {
+					fmt.Errorf("ERR: %s", err)
+					os.Exit(1)
+				}
+				targetDir = filepath.Join(home, "kubexport", name)
+			}
+
+			fmt.Println(targetDir)
+
+			localUseCase := registry.BuildLocalUseCase()
+			localUseCase.ExportPath(localPath, targetDir, isHelmChart)
+
+		},
+	}
+
+	cmd.Flags().StringVar(&localPath, "local", "", "Specify the directory of the local source yaml files")
+	cmd.Flags().StringVar(&targetDir, "target", "", "Specify the directory to create files")
+	// cmd.Flags().BoolVar(&isHelmChart, "helm", false, "Specify conversion to helm files")
+
+	return cmd
+
 }

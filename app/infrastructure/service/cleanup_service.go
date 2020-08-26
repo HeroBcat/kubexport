@@ -20,6 +20,31 @@ func (s cleanUpService) IsKubeKind(dict map[string]interface{}, kubeKind string)
 	return false
 }
 
+func (s cleanUpService) GetKubeKind(dict map[string]interface{}) string {
+	if kind := s.checkKey(dict, "kind"); kind != "" {
+		return kind
+	}
+	return ""
+}
+
+func (s cleanUpService) GetKubeName(dict map[string]interface{}) string {
+	if metadata := s.checkMapKey(dict, "metadata"); metadata != nil {
+		if name := s.checkKey(metadata, "name"); name != "" {
+			return name
+		}
+	}
+	return ""
+}
+
+func (s cleanUpService) GetKubeNameSpace(dict map[string]interface{}) string {
+	if metadata := s.checkMapKey(dict, "metadata"); metadata != nil {
+		if namespace := s.checkKey(metadata, "namespace"); namespace != "" {
+			return namespace
+		}
+	}
+	return ""
+}
+
 func (s cleanUpService) CleanUpDeployment(dict map[string]interface{}) map[string]interface{} {
 
 	// Deployment.spec
@@ -69,7 +94,7 @@ func (s cleanUpService) cleanUpSpecContainers(dict map[string]interface{}) map[s
 
 	if containers := s.checkListKey(dict, "containers"); containers != nil {
 		for _, container := range containers {
-			if containerDict, ok := container.(map[string]interface{}); ok {
+			if containerDict := s.isMap(container); containerDict != nil {
 				delete(containerDict, "terminationMessagePath")
 				delete(containerDict, "terminationMessagePolicy")
 				delete(containerDict, "resources")
@@ -88,6 +113,13 @@ func (s cleanUpService) checkKey(dict map[string]interface{}, key string) string
 
 func (s cleanUpService) checkMapKey(dict map[string]interface{}, key string) map[string]interface{} {
 	if subDict, isOK := dict[key].(map[string]interface{}); isOK {
+		return subDict
+	}
+	return nil
+}
+
+func (s cleanUpService) isMap(dict interface{}) map[string]interface{} {
+	if subDict, isOK := dict.(map[string]interface{}); isOK {
 		return subDict
 	}
 	return nil
