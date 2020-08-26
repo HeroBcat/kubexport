@@ -4,7 +4,6 @@ import (
 	"sync"
 
 	app "github.com/HeroBcat/kubexport/app/application"
-	cli "github.com/HeroBcat/kubexport/app/infrastructure/client"
 	serv "github.com/HeroBcat/kubexport/app/infrastructure/service"
 )
 
@@ -18,9 +17,9 @@ func BuildKubeUseCase() app.KubeUseCase {
 
 	kubeOnce.Do(func() {
 		if kubeUseCase == nil {
-			kubeClient := cli.NewKubeClient()
-			kubeService := serv.NewKubeService(kubeClient)
-			useCase := app.NewKubeUseCase(kubeService)
+			kubectlService := serv.NewKubectlService()
+			cleanUpService := serv.NewCleanUpService()
+			useCase := app.NewKubeUseCase(kubectlService, cleanUpService)
 			kubeUseCase = &useCase
 		}
 	})

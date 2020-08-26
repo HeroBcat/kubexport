@@ -1,6 +1,7 @@
 package application
 
 import (
+	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"log"
@@ -8,40 +9,37 @@ import (
 	"path/filepath"
 	"strings"
 
-	"gopkg.in/yaml.v3"
-	k8s "k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/tools/clientcmd"
+	"github.com/ghodss/yaml"
 
 	serv "github.com/HeroBcat/kubexport/app/domain/service"
+	"github.com/HeroBcat/kubexport/config/constant"
 )
 
 var defaultFilePerm = os.FileMode(0664)
 
 type KubeUseCase interface {
-	ExportYaml(path, targetDir string)
 	ExportObjects(objects map[string][]string, targetDir string)
-
-	ExportYamlToHelm(path, targetDir string)
-	ExportObjectsToHelm(objects map[string][]string, targetDir string)
+	ExportYaml(path, targetDir string)
 }
 
 type kubeUseCase struct {
-	service serv.KubeService
+	kubectl serv.KubectlService
+	cleanup serv.CleanUpService
 }
 
-func NewKubeUseCase(service serv.KubeService) KubeUseCase {
+func NewKubeUseCase(kubectl serv.KubectlService, cleanup serv.CleanUpService) KubeUseCase {
 	return kubeUseCase{
-		service,
+		kubectl,
+		cleanup,
 	}
+}
+
+type ExportsYaml struct {
+	Name      string              `yaml:"name"`
+	Resources []map[string]string `yaml:"resources"`
 }
 
 func (uc kubeUseCase) ExportYaml(path, targetDir string) {
-	kubeClient, err := DefaultKubeClient()
-	if err != nil {
-		log.Fatalln(err)
-	} else {
-		fmt.Println("connect k8s success")
-	}
 
 	fileByte, err := ioutil.ReadFile(path)
 	if err != nil {
@@ -58,75 +56,73 @@ func (uc kubeUseCase) ExportYaml(path, targetDir string) {
 	for _, content := range contents {
 		for _, resources := range content.Resources {
 			for kind, resource := range resources {
-				yaml := uc.service.ReadKubernetesObject(kubeClient, kind, resource)
-				fmt.Println("export " + kind + ": " + resource)
-				dir := filepath.Join(targetDir, content.Name)
-				createDirIfNotExist(dir)
-				filename := resource + "." + strings.ToLower(kind) + ".yaml"
-				filename = filepath.Join(dir, filename)
-				file, err := os.Create(filename)
-				if err != nil {
-					log.Fatal(err)
-				}
-				file.WriteString(yaml)
-				file.Close()
+				uc.export(resource, kind, targetDir)
 			}
-
 		}
-
 	}
 }
 
 func (uc kubeUseCase) ExportObjects(objects map[string][]string, targetDir string) {
 
-	kubeClient, err := DefaultKubeClient()
-	if err != nil {
-		log.Fatalln(err)
-	} else {
-		fmt.Println("connect k8s success")
-	}
-
 	for kind, resources := range objects {
 		for _, resource := range resources {
-			yaml := uc.service.ReadKubernetesObject(kubeClient, kind, resource)
-			fmt.Println("export " + kind + ": " + resource)
-			createDirIfNotExist(targetDir)
-			filename := resource + "." + strings.ToLower(kind) + ".yaml"
-			filename = filepath.Join(targetDir, filename)
-			file, err := os.Create(filename)
-			if err != nil {
-				log.Fatal(err)
-			}
-			file.WriteString(yaml)
-			file.Close()
+			uc.export(resource, kind, targetDir)
 		}
+	}
+}
 
+func (uc kubeUseCase) export(resource, kind, targetDir string) {
+
+	name := ""
+	namespace := ""
+
+	rs := strings.Split(resource, "@")
+	switch len(rs) {
+	case 0:
+		return
+	case 1:
+		name = resource
+	case 2:
+		name = rs[0]
+		namespace = rs[1]
 	}
 
-}
+	jsonFile := uc.kubectl.KubectlGet(kind, name, namespace)
 
-func (uc kubeUseCase) ExportYamlToHelm(path, targetDir string) {
-
-}
-
-func (uc kubeUseCase) ExportObjectsToHelm(objects map[string][]string, targetDir string) {
-
-}
-
-type ExportsYaml struct {
-	Name      string              `yaml:"name"`
-	Resources []map[string]string `yaml:"resources"`
-}
-
-func DefaultKubeClient() (k8s.Interface, error) {
-	rules := clientcmd.NewDefaultClientConfigLoadingRules()
-	rules.DefaultClientConfig = &clientcmd.DefaultClientConfig
-	overrides := &clientcmd.ConfigOverrides{ClusterDefaults: clientcmd.ClusterDefaults}
-	config, err := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(rules, overrides).ClientConfig()
+	dict := make(map[string]interface{}, 0)
+	err := json.Unmarshal([]byte(jsonFile), &dict)
 	if err != nil {
-		return nil, fmt.Errorf("could not get kubernetes config: %s", err)
+		log.Fatal(err)
 	}
-	return k8s.NewForConfig(config)
+
+	dict = uc.cleanup.CleanUpStatus(dict)
+	dict = uc.cleanup.CleanUpMetadata(dict)
+
+	if uc.cleanup.IsKubeKind(dict, constant.Deployments) {
+		dict = uc.cleanup.CleanUpDeployment(dict)
+	}
+
+	jBytes, err := json.Marshal(dict)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	yBytes, err := yaml.JSONToYAML(jBytes)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	fmt.Println("export " + kind + ": " + resource)
+	createDirIfNotExist(targetDir)
+	filename := resource + "." + strings.ToLower(kind) + ".yaml"
+	filename = filepath.Join(targetDir, filename)
+	file, err := os.Create(filename)
+	if err != nil {
+		log.Fatal(err)
+	}
+	file.Write(yBytes)
+	file.Close()
+
 }
 
 func createDirIfNotExist(dir string) error {

@@ -19,7 +19,6 @@ func main() {
 	var (
 		// sourceDir      string
 		targetDir      string
-		isHelmChart    bool = false
 		yamlPath       string
 		inputWithKinds = make([][]string, len(constant.KubeKinds))
 	)
@@ -72,20 +71,11 @@ func main() {
 			kubeUseCase := registry.BuildKubeUseCase()
 
 			if isYamlExist {
-				if isHelmChart {
-					kubeUseCase.ExportYamlToHelm(yamlPath, targetDir)
-				} else {
-					kubeUseCase.ExportYaml(yamlPath, targetDir)
-				}
+				kubeUseCase.ExportYaml(yamlPath, targetDir)
 			}
 
 			if isKindExist {
-				if isHelmChart {
-					kubeUseCase.ExportObjectsToHelm(kinds, targetDir)
-				} else {
-					kubeUseCase.ExportObjects(kinds, targetDir)
-				}
-
+				kubeUseCase.ExportObjects(kinds, targetDir)
 			}
 		},
 	}

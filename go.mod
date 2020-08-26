@@ -3,6 +3,7 @@ module github.com/HeroBcat/kubexport
 go 1.15
 
 require (
+	github.com/ghodss/yaml v1.0.0
 	github.com/imdario/mergo v0.3.11 // indirect
 	github.com/mitchellh/go-homedir v1.1.0
 	github.com/spf13/cobra v1.0.0
