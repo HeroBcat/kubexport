@@ -3,11 +3,20 @@
     - Deployment: kubernetes-deploy-watcher
     - ConfigMap: kubernetes-deploy-watcher
     - Secret: registry-creds
+    - ServiceAccount: kubernetes-deploy-watcher
+    - Role: kubernetes-deploy-watcher
+    - RoleBinding: kubernetes-deploy-watcher
+  namespace: default
 - name: openbayes-1s
   resources:
     - Deployment: openbayes-1s
     - ConfigMap: openbayes-1s
+    - ServiceAccount: openbayes-1s
+    - ClusterRole: openbayes-1s
+    - ClusterRoleBinding: openbayes-1s
 - name: openbayes-api-server
+  alias:
+    - openbayes-server
   resources:
     - Deployment: openbayes-server
     - Service: openbayes-server-svc
@@ -16,6 +25,8 @@
     - Secret: openbayes-server
     - Secret: openbayes-admin
 - name: openbayes-archive-service
+  alias:
+    - archive-storage
   resources:
     - Deployment: openbayes-archive-service
     - ConfigMap: openbayes-archive-service
@@ -26,13 +37,18 @@
     - Deployment: openbayes-command-runner
     - ConfigMap: openbayes-command-runner
     - ServiceAccount: openbayes-command-runner
+    - ClusterRoleBinding: openbayes-command-runner-binding
 - name: openbayes-console
   resources:
     - Deployment: openbayes-console
-    - Service: openbayes-console-service
     - Ingress: openbayes-console-ing
     - ConfigMap: openbayes-console
+    - Service: openbayes-console-service
 - name: openbayes-daemon-server
+  alias:
+    - openbayes-job-monitor
+    - openbayes-notification-server
+    - openbayes-queue-server
   resources:
     - Deployment: openbayes-daemon-server
     - Secret: openbayes-notification-server
@@ -48,6 +64,9 @@
     - Deployment: openbayes-payment-scheduler
     - ConfigMap: openbayes-payment-scheduler
 - name: openbayes-storage-service
+  alias:
+    - openbayes-storage-server
+    - openbayes-storage
   resources:
     - Deployment: openbayes-storage-server
     - Service: openbayes-storage-server-svc
@@ -61,9 +80,9 @@
     - Ingress: openbayes-value-ing
     - Secret: openbayes-vizier
 - name: openbayes.com
+  alias:
+    - openbayes-com
   resources:
     - Deployment: openbayes-com
     - Service: openbayes-com-service
     - Ingress: openbayes-com-ing
-
-

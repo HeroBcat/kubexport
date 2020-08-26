@@ -18,8 +18,8 @@ import (
 var defaultFilePerm = os.FileMode(0664)
 
 type KubeUseCase interface {
-	ExportObjects(objects map[string][]string, targetDir string)
-	ExportYaml(path, targetDir string)
+	ExportObjects(objects map[string][]string, targetDir string, isHelmChart bool)
+	ExportYaml(path, targetDir string, isHelmChart bool)
 }
 
 type kubeUseCase struct {
@@ -36,10 +36,12 @@ func NewKubeUseCase(kubectl serv.KubectlService, cleanup serv.CleanUpService) Ku
 
 type ExportsYaml struct {
 	Name      string              `yaml:"name"`
+	Alias     []string            `yaml:"alias"`
 	Resources []map[string]string `yaml:"resources"`
+	NameSpace string              `json:"namespace"`
 }
 
-func (uc kubeUseCase) ExportYaml(path, targetDir string) {
+func (uc kubeUseCase) ExportYaml(path, targetDir string, isHelmChart bool) {
 
 	fileByte, err := ioutil.ReadFile(path)
 	if err != nil {
@@ -54,24 +56,80 @@ func (uc kubeUseCase) ExportYaml(path, targetDir string) {
 	}
 
 	for _, content := range contents {
+
 		for _, resources := range content.Resources {
 			for kind, resource := range resources {
-				uc.export(resource, kind, targetDir)
+				childDir := ""
+				projectName := content.Name
+				if strings.HasPrefix(resource, projectName) {
+					childDir = projectName
+				}
+
+				if childDir == "" {
+					for _, alias := range content.Alias {
+						if strings.HasPrefix(resource, alias) {
+							childDir = projectName
+							break
+						}
+					}
+				}
+
+				uc.export(kind, resource, targetDir, childDir, isHelmChart)
 			}
 		}
+
+		uc.exportKustomization(targetDir, content.Name, content.NameSpace)
 	}
+
 }
 
-func (uc kubeUseCase) ExportObjects(objects map[string][]string, targetDir string) {
+func (uc kubeUseCase) ExportObjects(objects map[string][]string, targetDir string, isHelmChart bool) {
 
 	for kind, resources := range objects {
 		for _, resource := range resources {
-			uc.export(resource, kind, targetDir)
+			uc.export(kind, resource, targetDir, "", isHelmChart)
 		}
 	}
 }
 
-func (uc kubeUseCase) export(resource, kind, targetDir string) {
+func (uc kubeUseCase) export(kind, resource, targetDir, childDir string, isHelmChart bool) {
+	dict := uc.getContent(resource, kind)
+	if dict == nil {
+		return
+	}
+
+	filename := uc.getFileName(kind, resource, targetDir, childDir)
+
+	if isHelmChart {
+		uc.exportToHelmChart(dict, filename)
+	} else {
+		uc.exportToYaml(dict, filename)
+	}
+}
+
+func (uc kubeUseCase) createDirIfNotExist(dir string) error {
+	_, err := os.Stat(dir)
+	if os.IsNotExist(err) {
+		os.MkdirAll(dir, os.ModePerm)
+	}
+	return err
+}
+
+func (uc kubeUseCase) getFileName(kind, resource, targetDir, subDir string) string {
+	fmt.Println("export " + kind + ": " + resource)
+	if subDir != "" {
+		targetDir = filepath.Join(targetDir, subDir)
+	}
+	uc.createDirIfNotExist(targetDir)
+	filename := resource + "." + strings.ToLower(kind) + ".yaml"
+	if subDir != "" {
+		filename = strings.ToLower(kind) + ".yaml"
+	}
+	filename = filepath.Join(targetDir, filename)
+	return filename
+}
+
+func (uc kubeUseCase) getContent(resource, kind string) map[string]interface{} {
 
 	name := ""
 	namespace := ""
@@ -79,7 +137,7 @@ func (uc kubeUseCase) export(resource, kind, targetDir string) {
 	rs := strings.Split(resource, "@")
 	switch len(rs) {
 	case 0:
-		return
+		return nil
 	case 1:
 		name = resource
 	case 2:
@@ -101,7 +159,10 @@ func (uc kubeUseCase) export(resource, kind, targetDir string) {
 	if uc.cleanup.IsKubeKind(dict, constant.Deployments) {
 		dict = uc.cleanup.CleanUpDeployment(dict)
 	}
+	return dict
+}
 
+func (uc kubeUseCase) exportToYaml(dict map[string]interface{}, filename string) {
 	jBytes, err := json.Marshal(dict)
 	if err != nil {
 		log.Fatal(err)
@@ -112,23 +173,45 @@ func (uc kubeUseCase) export(resource, kind, targetDir string) {
 		log.Fatal(err)
 	}
 
-	fmt.Println("export " + kind + ": " + resource)
-	createDirIfNotExist(targetDir)
-	filename := resource + "." + strings.ToLower(kind) + ".yaml"
-	filename = filepath.Join(targetDir, filename)
 	file, err := os.Create(filename)
 	if err != nil {
 		log.Fatal(err)
 	}
-	file.Write(yBytes)
-	file.Close()
 
+	content := fmt.Sprintf("---\n%s", yBytes)
+	file.WriteString(content)
+	file.Close()
 }
 
-func createDirIfNotExist(dir string) error {
+func (uc kubeUseCase) exportKustomization(targetDir, projectName, namespace string) {
+
+	dir := filepath.Join(targetDir, projectName)
+
 	_, err := os.Stat(dir)
 	if os.IsNotExist(err) {
-		os.MkdirAll(dir, os.ModePerm)
+		return
 	}
-	return err
+
+	files, err := ioutil.ReadDir(dir)
+	if err != nil {
+		return
+	}
+
+	kinds := make([]string, 0)
+	for _, file := range files {
+		kinds = append(kinds, file.Name())
+	}
+
+	dict := make(map[string]interface{}, 0)
+	dict["resources"] = kinds
+	if namespace != "" {
+		dict["namespace"] = namespace
+	}
+
+	filename := uc.getFileName("kustomization", projectName, targetDir, projectName)
+	uc.exportToYaml(dict, filename)
+}
+
+func (uc kubeUseCase) exportToHelmChart(dict map[string]interface{}, filename string) {
+
 }
