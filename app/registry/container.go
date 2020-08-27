@@ -21,7 +21,8 @@ func BuildKubeUseCase() app.KubeUseCase {
 		if kubeUseCase == nil {
 			kubectlService := serv.NewKubectlService()
 			cleanUpService := serv.NewCleanUpService()
-			useCase := app.NewKubeUseCase(kubectlService, cleanUpService)
+			parseService := serv.NewParseService()
+			useCase := app.NewKubeUseCase(kubectlService, cleanUpService, parseService)
 			kubeUseCase = &useCase
 		}
 	})
@@ -34,7 +35,8 @@ func BuildLocalUseCase() app.LocalUseCase {
 	localOnce.Do(func() {
 		if localUseCase == nil {
 			cleanUpService := serv.NewCleanUpService()
-			useCase := app.NewLocalUseCase(cleanUpService)
+			parseService := serv.NewParseService()
+			useCase := app.NewLocalUseCase(cleanUpService, parseService)
 			localUseCase = &useCase
 		}
 	})

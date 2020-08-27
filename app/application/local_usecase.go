@@ -22,11 +22,13 @@ type LocalUseCase interface {
 
 type localUseCase struct {
 	cleanup serv.CleanUpService
+	parse   serv.ParseService
 }
 
-func NewLocalUseCase(cleanup serv.CleanUpService) LocalUseCase {
+func NewLocalUseCase(cleanup serv.CleanUpService, parse serv.ParseService) LocalUseCase {
 	return localUseCase{
 		cleanup: cleanup,
+		parse:   parse,
 	}
 }
 
@@ -140,25 +142,22 @@ func (uc localUseCase) SplitFiles(copyDir, targetDir string, isSubDir bool) {
 				dict := make(map[string]interface{}, 0)
 				yaml.Unmarshal([]byte(content), &dict)
 
-				kind := uc.cleanup.GetKubeKind(dict)
+				dict = uc.cleanup.CleanUpStatus(dict)
+				dict = uc.cleanup.CleanUpMetadata(dict)
+				dict = uc.cleanup.CleanUpDeployment(dict)
+
+				kind := uc.parse.GetKubeKind(dict)
 				if kind == "" {
 					continue
 				}
 
 				filename := filepath.Join(dir, kind+".yaml")
 				if !isSubDir {
-					filename = uc.cleanup.GetKubeName(dict) + "." + strings.ToLower(kind) + ".yaml"
+					filename = uc.parse.GetKubeName(dict) + "." + strings.ToLower(kind) + ".yaml"
 					filename = filepath.Join(dir, filename)
 				}
-				file, err := os.Create(filename)
-				if err != nil {
-					log.Fatal(err)
-				}
 
-				newContent := fmt.Sprintf("---\n%s", content)
-				newContent = strings.ReplaceAll(newContent, "---\n\n", "---\n")
-				file.WriteString(newContent)
-				file.Close()
+				uc.exportToYaml(dict, filename)
 			}
 
 		}
@@ -217,13 +216,13 @@ func (uc localUseCase) exportKustomization(targetDir string) {
 			dict := make(map[string]interface{}, 0)
 			yaml.Unmarshal(yBytes, &dict)
 
-			kind := uc.cleanup.GetKubeKind(dict)
+			kind := uc.parse.GetKubeKind(dict)
 			if kind == "" {
 				continue
 			}
 			kinds = append(kinds, strings.ToLower(kind)+".yaml")
 
-			ns := uc.cleanup.GetKubeNameSpace(dict)
+			ns := uc.parse.GetKubeNameSpace(dict)
 			if namespace == "" {
 				namespace = ns
 			}
@@ -241,6 +240,11 @@ func (uc localUseCase) exportKustomization(targetDir string) {
 		dict["namespace"] = namespace
 	}
 
+	filename := filepath.Join(targetDir, "kustomization.yaml")
+	uc.exportToYaml(dict, filename)
+}
+
+func (uc localUseCase) exportToYaml(dict map[string]interface{}, filename string) {
 	jBytes, err := json.Marshal(dict)
 	if err != nil {
 		log.Fatal(err)
@@ -251,7 +255,7 @@ func (uc localUseCase) exportKustomization(targetDir string) {
 		log.Fatal(err)
 	}
 
-	file, err := os.Create(filepath.Join(targetDir, "kustomization.yaml"))
+	file, err := os.Create(filename)
 	if err != nil {
 		log.Fatal(err)
 	}

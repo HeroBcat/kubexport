@@ -25,12 +25,14 @@ type KubeUseCase interface {
 type kubeUseCase struct {
 	kubectl serv.KubectlService
 	cleanup serv.CleanUpService
+	parse   serv.ParseService
 }
 
-func NewKubeUseCase(kubectl serv.KubectlService, cleanup serv.CleanUpService) KubeUseCase {
+func NewKubeUseCase(kubectl serv.KubectlService, cleanup serv.CleanUpService, parse serv.ParseService) KubeUseCase {
 	return kubeUseCase{
 		kubectl,
 		cleanup,
+		parse,
 	}
 }
 
@@ -156,7 +158,7 @@ func (uc kubeUseCase) getContent(resource, kind string) map[string]interface{} {
 	dict = uc.cleanup.CleanUpStatus(dict)
 	dict = uc.cleanup.CleanUpMetadata(dict)
 
-	if uc.cleanup.IsKubeKind(dict, constant.Deployments) {
+	if uc.parse.IsKubeKind(dict, constant.Deployments) {
 		dict = uc.cleanup.CleanUpDeployment(dict)
 	}
 	return dict
