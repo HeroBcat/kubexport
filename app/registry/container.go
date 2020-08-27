@@ -22,7 +22,8 @@ func BuildKubeUseCase() app.KubeUseCase {
 			kubectlService := serv.NewKubectlService()
 			cleanUpService := serv.NewCleanUpService()
 			parseService := serv.NewParseService()
-			useCase := app.NewKubeUseCase(kubectlService, cleanUpService, parseService)
+			replaceService := serv.NewReplaceService(parseService)
+			useCase := app.NewKubeUseCase(kubectlService, cleanUpService, parseService, replaceService)
 			kubeUseCase = &useCase
 		}
 	})

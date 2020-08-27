@@ -19,8 +19,8 @@ func main() {
 	var (
 		targetDir      string
 		yamlPath       string
-		isHelmChart    bool = false
-		inputWithKinds      = make([][]string, len(constant.KubeKinds))
+		isHelmChart    bool
+		inputWithKinds = make([][]string, len(constant.KubeKinds))
 	)
 
 	rootCmd := &cobra.Command{
@@ -82,7 +82,7 @@ func main() {
 
 	rootCmd.Flags().StringVar(&targetDir, "target", "", "Specify the directory to create files")
 	rootCmd.Flags().StringVar(&yamlPath, "yaml", "", "Specify the path of yaml file")
-	// rootCmd.Flags().BoolVar(&isHelmChart, "helm", false, "Specify conversion to helm files")
+	rootCmd.Flags().BoolVar(&isHelmChart, "helm", false, "Specify conversion to helm files")
 
 	for idx, kind := range constant.KubeKinds {
 		rootCmd.Flags().StringSliceVar(&inputWithKinds[idx], strings.ToLower(kind), nil, "Specify the names of "+kind)
