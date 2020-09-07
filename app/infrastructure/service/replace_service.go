@@ -40,7 +40,7 @@ func (s replaceService) ReplaceValues(dict map[string]interface{}, kind, project
 			chart[key] = newChart
 			values[key] = newContent
 		} else if utils.IsListObject(value) {
-			chart[key] = s.getListContent(s.getChartKey(s.addChartKey(chartKey, key)))
+			chart[key] = s.getListContent(s.addChartKey(chartKey, key))
 			values[key] = value
 		} else if list := utils.IsList(value); list != nil {
 			newChart, newContent := s.replaceListValues(list, s.addChartKey(chartKey, key), project, kind)
@@ -71,6 +71,11 @@ func (s replaceService) replaceDictValues(dict map[string]interface{}, xKey, pro
 			chart["release"] = "{{.Release.Name}}"
 		} else if key == "name" && strings.HasSuffix(strings.ToLower(chartKey), ".metadata") {
 			chart[key] = fmt.Sprintf("{{ template \"fullname\" . }}-%s", chart[key])
+		} else if key == "data" && strings.HasSuffix(strings.ToLower(chartKey), "configmap") {
+			newKey := strings.ReplaceAll(key, ".", "_")
+			chart[newKey] = s.getListContent(s.addChartKey(chartKey, newKey))
+			values[newKey] = value
+			continue
 		}
 
 		if obj := utils.IsObject(value); obj != nil {
@@ -86,7 +91,7 @@ func (s replaceService) replaceDictValues(dict map[string]interface{}, xKey, pro
 			chart[key] = newChart
 			values[key] = newContent
 		} else if utils.IsListObject(value) {
-			chart[key] = s.getListContent(s.getChartKey(s.addChartKey(chartKey, key)))
+			chart[key] = s.getListContent(s.addChartKey(chartKey, key))
 			values[key] = value
 		} else if list := utils.IsList(value); list != nil {
 			newChart, newContent := s.replaceListValues(list, s.addChartKey(chartKey, key), project, kind)

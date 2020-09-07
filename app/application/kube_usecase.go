@@ -118,7 +118,9 @@ func (uc kubeUseCase) export(kind, resource, targetDir, childDir string, isHelmC
 		valuesName := uc.getValuesName(kind, resource, targetDir, childDir)
 		filename = uc.getFileName(kind, resource, filepath.Join(targetDir, "templates"), childDir)
 
-		uc.exportToHelmChart(dict, kind, childDir, filename, valuesName)
+		p := strings.ReplaceAll(childDir, "-", "_")
+		p = strings.ReplaceAll(p, ".", "_")
+		uc.exportToHelmChart(dict, kind, p, filename, valuesName)
 	} else {
 		uc.exportToYaml(dict, filename, "---\n")
 	}
@@ -135,6 +137,8 @@ func (uc kubeUseCase) createDirIfNotExist(dir string) error {
 func (uc kubeUseCase) getFileName(kind, resource, targetDir, subDir string) string {
 
 	if subDir != "" {
+		subDir = strings.ReplaceAll(subDir, "-", "_")
+		subDir = strings.ReplaceAll(subDir, ".", "_")
 		targetDir = filepath.Join(targetDir, subDir)
 	}
 	uc.createDirIfNotExist(targetDir)
@@ -271,6 +275,8 @@ func (uc kubeUseCase) appendValues(targetDir string) {
 			ps := strings.Split(path, "/")
 			if len(ps) > 1 {
 				project := ps[len(ps)-2]
+				project = strings.ReplaceAll(project, "-", "_")
+				project = strings.ReplaceAll(project, ".", "_")
 				name := ps[len(ps)-1]
 				if strings.HasSuffix(targetDir, project) {
 					project = "global"
