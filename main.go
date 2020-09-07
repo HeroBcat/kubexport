@@ -19,7 +19,7 @@ func main() {
 	var (
 		targetDir      string
 		yamlPath       string
-		isHelmChart    bool
+		helmPath       string
 		inputWithKinds = make([][]string, len(constant.KubeKinds))
 	)
 
@@ -71,18 +71,18 @@ func main() {
 			kubeUseCase := registry.BuildKubeUseCase()
 
 			if isYamlExist {
-				kubeUseCase.ExportYaml(yamlPath, targetDir, isHelmChart)
+				kubeUseCase.ExportYaml(yamlPath, targetDir, helmPath)
 			}
 
 			if isKindExist {
-				kubeUseCase.ExportObjects(kinds, targetDir, isHelmChart)
+				kubeUseCase.ExportObjects(kinds, targetDir, helmPath)
 			}
 		},
 	}
 
 	rootCmd.Flags().StringVar(&targetDir, "target", "", "Specify the directory to create files")
 	rootCmd.Flags().StringVar(&yamlPath, "yaml", "", "Specify the path of yaml file")
-	rootCmd.Flags().BoolVar(&isHelmChart, "helm", false, "Specify conversion to helm files")
+	rootCmd.Flags().StringVar(&helmPath, "helm", "", "Specify the path of helm config file")
 
 	for idx, kind := range constant.KubeKinds {
 		rootCmd.Flags().StringSliceVar(&inputWithKinds[idx], strings.ToLower(kind), nil, "Specify the names of "+kind)

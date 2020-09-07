@@ -1,7 +1,6 @@
 package application
 
 import (
-	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"log"
@@ -10,29 +9,30 @@ import (
 	"strings"
 
 	"github.com/ghodss/yaml"
+	"github.com/tidwall/gjson"
+	"github.com/tidwall/sjson"
 
 	serv "github.com/HeroBcat/kubexport/app/domain/service"
 	"github.com/HeroBcat/kubexport/config/constant"
 )
 
 var defaultFilePerm = os.FileMode(0664)
+var helmValuesJson = "{}"
 
 type KubeUseCase interface {
-	ExportObjects(objects map[string][]string, targetDir string, isHelmChart bool)
-	ExportYaml(path, targetDir string, isHelmChart bool)
+	ExportObjects(objects map[string][]string, targetDir string, helmPath string)
+	ExportYaml(path, targetDir string, helmPath string)
 }
 
 type kubeUseCase struct {
 	kubectl serv.KubectlService
-	cleanup serv.CleanUpService
 	parse   serv.ParseService
 	replace serv.ReplaceService
 }
 
-func NewKubeUseCase(kubectl serv.KubectlService, cleanup serv.CleanUpService, parse serv.ParseService, replace serv.ReplaceService) KubeUseCase {
+func NewKubeUseCase(kubectl serv.KubectlService, parse serv.ParseService, replace serv.ReplaceService) KubeUseCase {
 	return kubeUseCase{
 		kubectl,
-		cleanup,
 		parse,
 		replace,
 	}
@@ -45,7 +45,7 @@ type ExportsYaml struct {
 	NameSpace string              `json:"namespace"`
 }
 
-func (uc kubeUseCase) ExportYaml(path, targetDir string, isHelmChart bool) {
+func (uc kubeUseCase) ExportYaml(path, targetDir string, helmPath string) {
 
 	fileByte, err := ioutil.ReadFile(path)
 	if err != nil {
@@ -58,6 +58,8 @@ func (uc kubeUseCase) ExportYaml(path, targetDir string, isHelmChart bool) {
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	isHelmChart := uc.isHelmChart(helmPath)
 
 	for _, content := range contents {
 
@@ -78,7 +80,7 @@ func (uc kubeUseCase) ExportYaml(path, targetDir string, isHelmChart bool) {
 					}
 				}
 
-				uc.export(kind, resource, targetDir, childDir, isHelmChart)
+				uc.export(kind, resource, targetDir, childDir, helmPath)
 			}
 		}
 
@@ -88,41 +90,40 @@ func (uc kubeUseCase) ExportYaml(path, targetDir string, isHelmChart bool) {
 	}
 
 	if isHelmChart {
-		uc.appendValues(targetDir)
 		uc.exportHelper(targetDir)
 		uc.exportChart(targetDir)
+		uc.exportToYaml(helmValuesJson, filepath.Join(targetDir, "values.yaml"), "")
 	}
 
 }
 
-func (uc kubeUseCase) ExportObjects(objects map[string][]string, targetDir string, isHelmChart bool) {
+func (uc kubeUseCase) ExportObjects(objects map[string][]string, targetDir string, helmPath string) {
 
 	for kind, resources := range objects {
 		for _, resource := range resources {
-			uc.export(kind, resource, targetDir, "", isHelmChart)
+			uc.export(kind, resource, targetDir, "", helmPath)
 		}
 	}
 }
 
-func (uc kubeUseCase) export(kind, resource, targetDir, childDir string, isHelmChart bool) {
-	dict := uc.getContent(resource, kind)
-	if dict == nil {
+func (uc kubeUseCase) export(kind, resource, targetDir, childDir string, helmPath string) {
+	json := uc.getContent(resource, kind)
+	if json == nil {
 		return
 	}
 
 	fmt.Println("export " + kind + ": " + resource)
 
-	filename := uc.getFileName(kind, resource, targetDir, childDir)
+	if uc.isHelmChart(helmPath) {
 
-	if isHelmChart {
-		valuesName := uc.getValuesName(kind, resource, targetDir, childDir)
-		filename = uc.getFileName(kind, resource, filepath.Join(targetDir, "templates"), childDir)
+		filename := uc.getFileName(kind, resource, filepath.Join(targetDir, "templates"), childDir)
 
 		p := strings.ReplaceAll(childDir, "-", "_")
 		p = strings.ReplaceAll(p, ".", "_")
-		uc.exportToHelmChart(dict, kind, p, filename, valuesName)
+		uc.exportToHelmChart(*json, kind, p, uc.getValuesContent(helmPath), filename)
 	} else {
-		uc.exportToYaml(dict, filename, "---\n")
+		filename := uc.getFileName(kind, resource, targetDir, childDir)
+		uc.exportToYaml(*json, filename, "---\n")
 	}
 }
 
@@ -141,6 +142,7 @@ func (uc kubeUseCase) getFileName(kind, resource, targetDir, subDir string) stri
 		subDir = strings.ReplaceAll(subDir, ".", "_")
 		targetDir = filepath.Join(targetDir, subDir)
 	}
+
 	uc.createDirIfNotExist(targetDir)
 	filename := resource + "." + strings.ToLower(kind) + ".yaml"
 	if subDir != "" {
@@ -150,21 +152,7 @@ func (uc kubeUseCase) getFileName(kind, resource, targetDir, subDir string) stri
 	return filename
 }
 
-func (uc kubeUseCase) getValuesName(kind, resource, targetDir, subDir string) string {
-
-	if subDir != "" {
-		targetDir = filepath.Join(targetDir, subDir)
-	}
-	uc.createDirIfNotExist(targetDir)
-	filename := "_values." + resource + "." + strings.ToLower(kind) + ".yaml"
-	if subDir != "" {
-		filename = "_values." + strings.ToLower(kind) + ".yaml"
-	}
-	filename = filepath.Join(targetDir, filename)
-	return filename
-}
-
-func (uc kubeUseCase) getContent(resource, kind string) map[string]interface{} {
+func (uc kubeUseCase) getContent(resource, kind string) *string {
 
 	name := ""
 	namespace := ""
@@ -180,30 +168,46 @@ func (uc kubeUseCase) getContent(resource, kind string) map[string]interface{} {
 		namespace = rs[1]
 	}
 
-	jsonFile := uc.kubectl.KubectlGet(kind, name, namespace)
+	jsonContent := uc.kubectl.KubectlGet(kind, name, namespace)
 
-	dict := make(map[string]interface{}, 0)
-	err := json.Unmarshal([]byte(jsonFile), &dict)
-	if err != nil {
-		log.Fatal(err)
+	jsonContent, _ = sjson.Delete(jsonContent, "status")
+
+	jsonContent, _ = sjson.Delete(jsonContent, "metadata.annotations")
+	jsonContent, _ = sjson.Delete(jsonContent, "metadata.creationTimestamp")
+	jsonContent, _ = sjson.Delete(jsonContent, "metadata.generation")
+	jsonContent, _ = sjson.Delete(jsonContent, "metadata.resourceVersion")
+	jsonContent, _ = sjson.Delete(jsonContent, "metadata.selfLink")
+	jsonContent, _ = sjson.Delete(jsonContent, "metadata.uid")
+
+	if uc.parse.IsKubeKind(jsonContent, constant.Deployments) {
+		jsonContent, _ = sjson.Delete(jsonContent, "spec.progressDeadlineSeconds")
+		jsonContent, _ = sjson.Delete(jsonContent, "spec.revisionHistoryLimit")
+		jsonContent, _ = sjson.Delete(jsonContent, "spec.strategy")
+
+		jsonContent, _ = sjson.Delete(jsonContent, "spec.template.metadata")
+
+		jsonContent, _ = sjson.Delete(jsonContent, "spec.template.spec.dnsPolicy")
+		jsonContent, _ = sjson.Delete(jsonContent, "spec.template.spec.restartPolicy")
+		jsonContent, _ = sjson.Delete(jsonContent, "spec.template.spec.schedulerName")
+		jsonContent, _ = sjson.Delete(jsonContent, "spec.template.spec.terminationGracePeriodSeconds")
+		jsonContent, _ = sjson.Delete(jsonContent, "spec.template.spec.securityContext")
+		jsonContent, _ = sjson.Delete(jsonContent, "spec.template.spec.serviceAccount")
+
+		for i := 0; i < len(gjson.Get(jsonContent, "spec.template.spec.containers").Array()); i++ {
+			key := fmt.Sprintf("spec.template.spec.containers.%d.", i)
+			jsonContent, _ = sjson.Delete(jsonContent, key+"terminationMessagePath")
+			jsonContent, _ = sjson.Delete(jsonContent, key+"terminationMessagePolicy")
+			jsonContent, _ = sjson.Delete(jsonContent, key+"resources")
+		}
+
 	}
 
-	dict = uc.cleanup.CleanUpStatus(dict)
-	dict = uc.cleanup.CleanUpMetadata(dict)
-
-	if uc.parse.IsKubeKind(dict, constant.Deployments) {
-		dict = uc.cleanup.CleanUpDeployment(dict)
-	}
-	return dict
+	return &jsonContent
 }
 
-func (uc kubeUseCase) exportToYaml(dict interface{}, filename string, prefix string) {
-	jBytes, err := json.Marshal(dict)
-	if err != nil {
-		log.Fatal(err)
-	}
+func (uc kubeUseCase) exportToYaml(jsonContent string, filename string, prefix string) {
 
-	yBytes, err := yaml.JSONToYAML(jBytes)
+	yBytes, err := yaml.JSONToYAML([]byte(jsonContent))
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -240,84 +244,24 @@ func (uc kubeUseCase) exportKustomization(targetDir, projectName, namespace stri
 		kinds = append(kinds, file.Name())
 	}
 
-	dict := make(map[string]interface{}, 0)
-	dict["resources"] = kinds
+	jsonContent, _ := sjson.Set("", "resources", kinds)
 	if namespace != "" {
-		dict["namespace"] = namespace
+		jsonContent, _ = sjson.Set(jsonContent, "namespace", namespace)
 	}
 
 	filename := uc.getFileName("kustomization", projectName, targetDir, projectName)
-	uc.exportToYaml(dict, filename, "---\n")
+	uc.exportToYaml(jsonContent, filename, "---\n")
 }
 
-func (uc kubeUseCase) exportToHelmChart(dict map[string]interface{}, kind, project, filename, valuesName string) {
+func (uc kubeUseCase) exportToHelmChart(json string, kind, project string, configs map[string]interface{}, filename string) {
 	if project == "" {
 		project = "global"
 	}
-	chart, values := uc.replace.ReplaceValues(dict, kind, project)
+
+	chart, values := uc.replace.ReplaceValues(json, helmValuesJson, kind, project, configs)
+	helmValuesJson = values
 
 	uc.exportToYaml(chart, filename, "")
-	uc.exportToYaml(values, valuesName, "")
-
-}
-
-func (uc kubeUseCase) appendValues(targetDir string) {
-
-	values := make(map[string]map[string]interface{}, 0)
-
-	filepath.Walk(targetDir, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-
-		if !info.IsDir() && strings.HasPrefix(info.Name(), "_values.") && strings.HasSuffix(info.Name(), ".yaml") {
-
-			ps := strings.Split(path, "/")
-			if len(ps) > 1 {
-				project := ps[len(ps)-2]
-				project = strings.ReplaceAll(project, "-", "_")
-				project = strings.ReplaceAll(project, ".", "_")
-				name := ps[len(ps)-1]
-				if strings.HasSuffix(targetDir, project) {
-					project = "global"
-				}
-
-				fs := strings.Split(name, ".")
-				if len(fs) > 1 {
-					name = fs[len(fs)-2]
-				}
-
-				dict := uc.getValuesContent(path)
-				if projDict, ok := values[project]; ok {
-					projDict[name] = dict[name]
-				} else {
-					values[project] = make(map[string]interface{}, 0)
-					values[project][name] = dict[name]
-				}
-
-			}
-
-		}
-
-		return nil
-	})
-
-	uc.exportToYaml(values, filepath.Join(targetDir, "values.yaml"), "")
-
-	states, err := ioutil.ReadDir(targetDir)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	for _, state := range states {
-		if state.Name() == "templates" {
-			continue
-		} else if state.Name() == "values.yaml" {
-			continue
-		}
-
-		os.RemoveAll(filepath.Join(targetDir, state.Name()))
-	}
 
 }
 
@@ -335,6 +279,16 @@ func (uc kubeUseCase) getValuesContent(path string) map[string]interface{} {
 	}
 
 	return dict
+}
+
+func (uc kubeUseCase) getJsonContent(path string) string {
+
+	content, err := ioutil.ReadFile(path)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	return string(content)
 }
 
 func (uc kubeUseCase) exportHelper(targetDir string) {
@@ -368,13 +322,21 @@ func (uc kubeUseCase) exportChart(targetDir string) {
 	filename := filepath.Join(targetDir, "Chart.yaml")
 	_, err := os.Stat(filename)
 	if os.IsNotExist(err) {
-		dict := make(map[string]string, 0)
-		dict["apiVersion"] = "v1"
-		dict["name"] = "openbayes"
-		dict["description"] = "A Helm chart for Kubernetes"
-		dict["version"] = "0.1.0"
+		jsonContent, _ := sjson.Set("", "apiVersion", "v1")
+		jsonContent, _ = sjson.Set(jsonContent, "name", "openbayes")
+		jsonContent, _ = sjson.Set(jsonContent, "description", "A Helm chart for Kubernetes")
+		jsonContent, _ = sjson.Set(jsonContent, "version", "0.1.0")
 
-		uc.exportToYaml(dict, filename, "")
+		uc.exportToYaml(jsonContent, filename, "")
 	}
+
+}
+
+func (uc kubeUseCase) isHelmChart(helmPath string) bool {
+	_, err := os.Stat(helmPath)
+	if os.IsNotExist(err) || err != nil {
+		return false
+	}
+	return true
 
 }

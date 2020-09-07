@@ -12,8 +12,10 @@ import (
 	"time"
 
 	"github.com/ghodss/yaml"
+	"github.com/tidwall/sjson"
 
 	serv "github.com/HeroBcat/kubexport/app/domain/service"
+	"github.com/HeroBcat/kubexport/config/constant"
 )
 
 type LocalUseCase interface {
@@ -21,14 +23,12 @@ type LocalUseCase interface {
 }
 
 type localUseCase struct {
-	cleanup serv.CleanUpService
-	parse   serv.ParseService
+	parse serv.ParseService
 }
 
-func NewLocalUseCase(cleanup serv.CleanUpService, parse serv.ParseService) LocalUseCase {
+func NewLocalUseCase(parse serv.ParseService) LocalUseCase {
 	return localUseCase{
-		cleanup: cleanup,
-		parse:   parse,
+		parse: parse,
 	}
 }
 
@@ -130,34 +130,54 @@ func (uc localUseCase) SplitFiles(copyDir, targetDir string, isSubDir bool) {
 			}
 
 			contents := strings.Split(string(yBytes), "\n---")
-			for _, content := range contents {
+			for _, jsonContent := range contents {
 
-				if content == "" {
+				if jsonContent == "" {
 					continue
 				}
-				if content == "\n" {
+				if jsonContent == "\n" {
 					continue
 				}
 
-				dict := make(map[string]interface{}, 0)
-				yaml.Unmarshal([]byte(content), &dict)
+				jsonContent, _ = sjson.Delete(jsonContent, "metadata.annotations")
+				jsonContent, _ = sjson.Delete(jsonContent, "metadata.creationTimestamp")
+				jsonContent, _ = sjson.Delete(jsonContent, "metadata.generation")
+				jsonContent, _ = sjson.Delete(jsonContent, "metadata.resourceVersion")
+				jsonContent, _ = sjson.Delete(jsonContent, "metadata.selfLink")
+				jsonContent, _ = sjson.Delete(jsonContent, "metadata.uid")
 
-				dict = uc.cleanup.CleanUpStatus(dict)
-				dict = uc.cleanup.CleanUpMetadata(dict)
-				dict = uc.cleanup.CleanUpDeployment(dict)
+				if uc.parse.IsKubeKind(jsonContent, constant.Deployments) {
+					jsonContent, _ = sjson.Delete(jsonContent, "spec.progressDeadlineSeconds")
+					jsonContent, _ = sjson.Delete(jsonContent, "spec.revisionHistoryLimit")
+					jsonContent, _ = sjson.Delete(jsonContent, "spec.strategy")
 
-				kind := uc.parse.GetKubeKind(dict)
+					jsonContent, _ = sjson.Delete(jsonContent, "spec.template.metadata")
+
+					jsonContent, _ = sjson.Delete(jsonContent, "spec.template.spec.dnsPolicy")
+					jsonContent, _ = sjson.Delete(jsonContent, "spec.template.spec.restartPolicy")
+					jsonContent, _ = sjson.Delete(jsonContent, "spec.template.spec.schedulerName")
+					jsonContent, _ = sjson.Delete(jsonContent, "spec.template.spec.terminationGracePeriodSeconds")
+					jsonContent, _ = sjson.Delete(jsonContent, "spec.template.spec.securityContext")
+					jsonContent, _ = sjson.Delete(jsonContent, "spec.template.spec.serviceAccount")
+
+					jsonContent, _ = sjson.Delete(jsonContent, "spec.template.spec.containers.terminationMessagePath")
+					jsonContent, _ = sjson.Delete(jsonContent, "spec.template.spec.containers.terminationMessagePolicy")
+					jsonContent, _ = sjson.Delete(jsonContent, "spec.template.spec.containers.resources")
+
+				}
+
+				kind := uc.parse.GetKubeKind(jsonContent)
 				if kind == "" {
 					continue
 				}
 
 				filename := filepath.Join(dir, kind+".yaml")
 				if !isSubDir {
-					filename = uc.parse.GetKubeName(dict) + "." + strings.ToLower(kind) + ".yaml"
+					filename = uc.parse.GetKubeName(jsonContent) + "." + strings.ToLower(kind) + ".yaml"
 					filename = filepath.Join(dir, filename)
 				}
 
-				uc.exportToYaml(dict, filename)
+				uc.exportToYaml(jsonContent, filename)
 			}
 
 		}
@@ -213,16 +233,15 @@ func (uc localUseCase) exportKustomization(targetDir string) {
 				continue
 			}
 
-			dict := make(map[string]interface{}, 0)
-			yaml.Unmarshal(yBytes, &dict)
+			jsonContent := string(yBytes)
 
-			kind := uc.parse.GetKubeKind(dict)
+			kind := uc.parse.GetKubeKind(jsonContent)
 			if kind == "" {
 				continue
 			}
 			kinds = append(kinds, strings.ToLower(kind)+".yaml")
 
-			ns := uc.parse.GetKubeNameSpace(dict)
+			ns := uc.parse.GetKubeNameSpace(jsonContent)
 			if namespace == "" {
 				namespace = ns
 			}
@@ -244,13 +263,22 @@ func (uc localUseCase) exportKustomization(targetDir string) {
 	uc.exportToYaml(dict, filename)
 }
 
-func (uc localUseCase) exportToYaml(dict map[string]interface{}, filename string) {
-	jBytes, err := json.Marshal(dict)
-	if err != nil {
-		log.Fatal(err)
+func (uc localUseCase) exportToYaml(object interface{}, filename string) {
+
+	jsonContent := make([]byte, 0)
+
+	if value, ok := object.(string); ok {
+		jsonContent = []byte(value)
+	} else {
+		result, err := json.Marshal(value)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		jsonContent = result
 	}
 
-	yBytes, err := yaml.JSONToYAML(jBytes)
+	yBytes, err := yaml.JSONToYAML(jsonContent)
 	if err != nil {
 		log.Fatal(err)
 	}

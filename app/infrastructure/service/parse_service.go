@@ -1,8 +1,11 @@
 package service
 
 import (
+	"strings"
+
+	"github.com/tidwall/gjson"
+
 	serv "github.com/HeroBcat/kubexport/app/domain/service"
-	"github.com/HeroBcat/kubexport/app/infrastructure/service/utils"
 )
 
 type parseService struct {
@@ -12,36 +15,23 @@ func NewParseService() serv.ParseService {
 	return parseService{}
 }
 
-func (s parseService) IsKubeKind(dict map[string]interface{}, kubeKind string) bool {
-	if kind := utils.IsKey(dict, "kind"); kind != "" {
-		if kind == kubeKind {
-			return true
-		}
+func (s parseService) IsKubeKind(jsonContent string, kubeKind string) bool {
+
+	kind := strings.ToLower(gjson.Get(jsonContent, "kind").String())
+	if strings.ToLower(kind) == strings.ToLower(kubeKind) {
+		return true
 	}
 	return false
 }
 
-func (s parseService) GetKubeKind(dict map[string]interface{}) string {
-	if kind := utils.IsKey(dict, "kind"); kind != "" {
-		return kind
-	}
-	return ""
+func (s parseService) GetKubeKind(jsonContent string) string {
+	return gjson.Get(jsonContent, "kind").String()
 }
 
-func (s parseService) GetKubeName(dict map[string]interface{}) string {
-	if metadata := utils.ISMapKey(dict, "metadata"); metadata != nil {
-		if name := utils.IsKey(metadata, "name"); name != "" {
-			return name
-		}
-	}
-	return ""
+func (s parseService) GetKubeName(jsonContent string) string {
+	return strings.ToLower(gjson.Get(jsonContent, "metadata.name").String())
 }
 
-func (s parseService) GetKubeNameSpace(dict map[string]interface{}) string {
-	if metadata := utils.ISMapKey(dict, "metadata"); metadata != nil {
-		if namespace := utils.IsKey(metadata, "namespace"); namespace != "" {
-			return namespace
-		}
-	}
-	return ""
+func (s parseService) GetKubeNameSpace(jsonContent string) string {
+	return strings.ToLower(gjson.Get(jsonContent, "metadata.namespace").String())
 }

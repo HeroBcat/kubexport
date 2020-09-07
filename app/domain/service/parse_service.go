@@ -1,9 +1,9 @@
 package service
 
 type ParseService interface {
-	IsKubeKind(dict map[string]interface{}, kubeKind string) bool
+	IsKubeKind(jsonContent string, kubeKind string) bool
 
-	GetKubeKind(dict map[string]interface{}) string
-	GetKubeName(dict map[string]interface{}) string
-	GetKubeNameSpace(dict map[string]interface{}) string
+	GetKubeKind(jsonContent string) string
+	GetKubeName(jsonContent string) string
+	GetKubeNameSpace(jsonContent string) string
 }

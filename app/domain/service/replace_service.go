@@ -1,5 +1,5 @@
 package service
 
 type ReplaceService interface {
-	ReplaceValues(dict map[string]interface{}, kind, project string) (map[string]interface{}, map[string]interface{})
+	ReplaceValues(jsonContent, valuesJson string, kind, project string, configs map[string]interface{}) (string, string)
 }
